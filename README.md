@@ -1,4 +1,4 @@
-Murf AI Voice Agent – Day 1 Submission
+# Murf AI Voice Agent – Day 1 Submission
 
 This project is part of the Murf AI Voice Agents Challenge, where participants build AI-powered voice agents using the fastest TTS API — Murf Falcon.
 This repository contains my Day 1 task submission, including the setup, implementation, and instructions to run the voice agent in the browser.
