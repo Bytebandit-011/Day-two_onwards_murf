@@ -1,0 +1,14 @@
+[
+  {
+    "timestamp": "2025-11-24T14:06:41.491955+00:00",
+    "mood": "pretty good",
+    "energy": 6,
+    "stressors": "submissions due in two days",
+    "objectives": [
+      "complete submission",
+      "cook something",
+      "talk with parents"
+    ],
+    "agent_summary": "User is feeling pretty good with energy around 6/10, with upcoming submissions causing some stress. Objectives for today are to complete the submission, cook, and talk with parents."
+  }
+]
