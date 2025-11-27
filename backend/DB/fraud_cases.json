@@ -1,0 +1,37 @@
+[
+  {
+    "id": "CASE001",
+    "userName": "John",
+    "securityIdentifier": "12345",
+    "securityQuestion": "What's your birthplace?",
+    "securityAnswer": "mumbai",
+    "cardEnding": "4242",
+    "transactionAmount": 500,
+    "transactionCurrency": "USD",
+    "transactionName": "Gada Electronics",
+    "transactionTime": "2025-11-26 02:15 AM",
+    "transactionCategory": "e-commerce",
+    "transactionLocation": "Delhi ",
+    "status": "closed",
+    "outcome": "confirmed_safe",
+    "verificationTimestamp": "2025-11-27T18:39:06.704001"
+  },
+  {
+    "id": "CASE002",
+    "userName": "Sarah",
+    "securityIdentifier": "67890",
+    "securityQuestion": "What's your favourite animal?",
+    "securityAnswer": "dog",
+    "cardEnding": "8888",
+    "transactionAmount": 1200,
+    "transactionCurrency": "USD",
+    "transactionName": "Luxury Watches",
+    "transactionTime": "2025-11-25 11:45 PM",
+    "transactionCategory": "luxury goods",
+    "transactionSource": "luxwatches.net",
+    "transactionLocation": "Paris",
+    "status": "closed",
+    "outcome": "confirmed_fraud",
+    "verificationTimestamp": "2025-11-27T18:40:14.303981"
+  }
+]
