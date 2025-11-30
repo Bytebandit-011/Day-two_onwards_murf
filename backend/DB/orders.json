@@ -1,0 +1,82 @@
+[
+  {
+    "id": "3cc0dd25-e8bb-4c9f-99ea-b48453f73659",
+    "created_at": "2025-11-30T10:21:28.762193Z",
+    "status": "CONFIRMED",
+    "items": [
+      {
+        "product_id": "tshirt-002",
+        "name": "Premium Organic T-Shirt",
+        "quantity": 1,
+        "unit_price": 850,
+        "currency": "INR",
+        "item_total": 850
+      }
+    ],
+    "total": 850,
+    "currency": "INR",
+    "buyer": {
+      "name": "Voice Customer"
+    }
+  },
+  {
+    "id": "94b2b564-0745-4e55-a365-ceaa775530a2",
+    "created_at": "2025-11-30T10:28:48.834716Z",
+    "status": "CONFIRMED",
+    "items": [
+      {
+        "product_id": "cap-001",
+        "name": "Baseball Cap",
+        "quantity": 1,
+        "unit_price": 349,
+        "currency": "INR",
+        "item_total": 349
+      }
+    ],
+    "total": 349,
+    "currency": "INR",
+    "buyer": {
+      "name": "Voice Customer"
+    }
+  },
+  {
+    "id": "d34c5be4-bfda-4829-9ce4-a45e8c95f137",
+    "created_at": "2025-11-30T10:29:18.985694Z",
+    "status": "CONFIRMED",
+    "items": [
+      {
+        "product_id": "mug-002",
+        "name": "Blue Enamel Camping Mug",
+        "quantity": 2,
+        "unit_price": 650,
+        "currency": "INR",
+        "item_total": 1300
+      }
+    ],
+    "total": 1300,
+    "currency": "INR",
+    "buyer": {
+      "name": "Voice Customer"
+    }
+  },
+  {
+    "id": "590d829b-255e-4bfd-bb48-efb81e24ca59",
+    "created_at": "2025-11-30T10:31:28.795351Z",
+    "status": "CONFIRMED",
+    "items": [
+      {
+        "product_id": "hoodie-001",
+        "name": "Classic Fleece Hoodie",
+        "quantity": 1,
+        "unit_price": 1200,
+        "currency": "INR",
+        "item_total": 1200
+      }
+    ],
+    "total": 1200,
+    "currency": "INR",
+    "buyer": {
+      "name": "Voice Customer"
+    }
+  }
+]

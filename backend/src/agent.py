@@ -1,417 +1,528 @@
 import logging
 import json
+import os
 from datetime import datetime
+from typing import Optional
 from pathlib import Path
-from dotenv import load_dotenv
 
+from dotenv import load_dotenv
 from livekit.agents import (
     Agent,
     AgentSession,
     JobContext,
     JobProcess,
+    MetricsCollectedEvent,
+    RoomInputOptions,
     WorkerOptions,
     cli,
-    function_tool,
-    RunContext,
+    metrics,
     tokenize,
+    function_tool,
+    RunContext
 )
-from livekit.plugins import murf, silero, google, deepgram
+from livekit.plugins import murf, silero, google, deepgram, noise_cancellation
 from livekit.plugins.turn_detector.multilingual import MultilingualModel
 
-logger = logging.getLogger("dnd-game-master")
+logger = logging.getLogger("agent")
+
 load_dotenv(".env.local")
 
+# File paths
+DB_DIR = Path("DB")
+CATALOG_FILE = DB_DIR / "catalog.json"
+ORDERS_FILE = DB_DIR / "orders.json"
 
-class GameMasterAgent(Agent):
-    def __init__(self, universe: str = "detective", tone: str = "dramatic") -> None:
-        self.universe = universe
-        self.tone = tone
-        self.turn_count = 0
-        self.story_events = []
-        self.player_name = None
-        self.current_location = None
-        self.inventory = []
-        self.companions = []
-        self.clues = []  # For detective universe
-        self.suspects = []  # For detective universe
+# Ensure DB directory exists
+DB_DIR.mkdir(exist_ok=True)
+
+
+def load_catalog() -> list[dict]:
+    """Load product catalog from DB/catalog.json"""
+    try:
+        if CATALOG_FILE.exists():
+            with open(CATALOG_FILE, 'r', encoding='utf-8') as f:
+                catalog = json.load(f)
+                logger.info(f"Loaded {len(catalog)} products from catalog")
+                return catalog
+        else:
+            logger.warning(f"Catalog file not found at {CATALOG_FILE}")
+            return []
+    except Exception as e:
+        logger.error(f"Error loading catalog: {e}")
+        return []
+
+
+def load_orders() -> list[dict]:
+    """Load orders from DB/orders.json"""
+    try:
+        if ORDERS_FILE.exists():
+            with open(ORDERS_FILE, 'r', encoding='utf-8') as f:
+                orders = json.load(f)
+                logger.info(f"Loaded {len(orders)} orders")
+                return orders
+        else:
+            logger.info("No existing orders file, starting fresh")
+            return []
+    except Exception as e:
+        logger.error(f"Error loading orders: {e}")
+        return []
+
+
+def save_orders(orders: list[dict]) -> bool:
+    """Save orders to DB/orders.json"""
+    try:
+        with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(orders, f, indent=2, ensure_ascii=False)
+        logger.info(f"Saved {len(orders)} orders to file")
+        return True
+    except Exception as e:
+        logger.error(f"Error saving orders: {e}")
+        return False
+
+
+def list_products(
+    category: Optional[str] = None,
+    max_price: Optional[int] = None,
+    color: Optional[str] = None,
+    search_term: Optional[str] = None
+) -> list[dict]:
+    """
+    Filter and return products from the catalog.
+    
+    Args:
+        category: Filter by product category (e.g., 'mug', 'tshirt', 'hoodie')
+        max_price: Maximum price in INR
+        color: Filter by color
+        search_term: Search in product name or description
+    
+    Returns:
+        List of matching products
+    """
+    products = load_catalog()
+    results = products.copy()
+    
+    if category:
+        results = [p for p in results if p.get("category", "").lower() == category.lower()]
+    
+    if max_price:
+        results = [p for p in results if p["price"] <= max_price]
+    
+    if color:
+        results = [p for p in results if p.get("color", "").lower() == color.lower()]
+    
+    if search_term:
+        search_lower = search_term.lower()
+        results = [
+            p for p in results 
+            if search_lower in p["name"].lower() or search_lower in p.get("description", "").lower()
+        ]
+    
+    return results
+
+
+def create_order(line_items: list[dict]) -> dict:
+    """
+    Create a new order from line items.
+    
+    Args:
+        line_items: List of dicts with keys: product_id, quantity, and optionally size
         
-        # Define the universe settings
-        universe_settings = {
-            "fantasy": {
-                "setting": "a medieval fantasy realm of magic, dragons, and ancient kingdoms",
-                "starting_location": "the bustling market square of Thornhaven, a frontier town",
-                "threats": "bandits, monsters, dark wizards, and ancient curses",
-                "tone_desc": "epic and adventurous"
-            },
-            "sci-fi": {
-                "setting": "a distant future among the stars, where humanity has colonized multiple planets",
-                "starting_location": "the cargo bay of the starship Odyssey, docked at Station Epsilon",
-                "threats": "alien creatures, rogue AI, space pirates, and corporate conspiracies",
-                "tone_desc": "mysterious and tense"
-            },
-            "post-apocalypse": {
-                "setting": "a world devastated by nuclear war, where survivors struggle in the wasteland",
-                "starting_location": "the ruins of what was once a shopping mall, now a survivor settlement",
-                "threats": "raiders, mutants, radiation storms, and scarce resources",
-                "tone_desc": "gritty and survival-focused"
-            },
-            "horror": {
-                "setting": "a small town plagued by supernatural forces and dark secrets",
-                "starting_location": "an old Victorian mansion on the outskirts of Ravencrest",
-                "threats": "ghosts, demons, cultists, and eldritch horrors",
-                "tone_desc": "spooky and atmospheric"
-            },
-            "detective": {
-                "setting": "a noir-style city in the 1940s, where crime and corruption run deep",
-                "starting_location": "your cramped detective office on the third floor of a rundown building on 5th Street",
-                "threats": "murderers, crime syndicates, corrupt officials, and dark conspiracies",
-                "tone_desc": "noir and mysterious, with sharp observations and clever deductions"
-            }
-        }
+    Returns:
+        Order object with id, items, total, currency, and timestamp
+    """
+    products = load_catalog()
+    orders = load_orders()
+    
+    order_items = []
+    total = 0
+    
+    for item in line_items:
+        product_id = item.get("product_id")
+        quantity = item.get("quantity", 1)
+        size = item.get("size")
         
-        self.world = universe_settings.get(universe, universe_settings["detective"])
+        # Find the product
+        product = next((p for p in products if p["id"] == product_id), None)
         
+        if not product:
+            raise ValueError(f"Product {product_id} not found")
+        
+        if not product.get("in_stock", False):
+            raise ValueError(f"Product {product['name']} is out of stock")
+        
+        # Validate size if applicable
+        if size and "sizes" in product:
+            if size.upper() not in product["sizes"]:
+                raise ValueError(f"Size {size} not available for {product['name']}")
+        
+        item_total = product["price"] * quantity
+        total += item_total
+        
+        order_items.append({
+            "product_id": product_id,
+            "product_name": product["name"],
+            "quantity": quantity,
+            "size": size,
+            "unit_price": product["price"],
+            "item_total": item_total
+        })
+    
+    # Generate order
+    order = {
+        "id": f"ORD-{len(orders) + 1:04d}",
+        "items": order_items,
+        "total": total,
+        "currency": "INR",
+        "created_at": datetime.now().isoformat(),
+        "status": "confirmed"
+    }
+    
+    # Add to orders list and save
+    orders.append(order)
+    save_orders(orders)
+    
+    # Log order for debugging
+    logger.info(f"Order created: {json.dumps(order, indent=2)}")
+    
+    return order
+
+
+def get_last_order() -> Optional[dict]:
+    """
+    Retrieve the most recent order.
+    
+    Returns:
+        The last order object or None if no orders exist
+    """
+    orders = load_orders()
+    if orders:
+        return orders[-1]
+    return None
+
+
+def get_all_orders() -> list[dict]:
+    """
+    Retrieve all orders.
+    
+    Returns:
+        List of all order objects
+    """
+    return load_orders()
+
+
+class Assistant(Agent):
+    def __init__(self) -> None:
         super().__init__(
-            instructions=f"""You are an expert Game Master (GM) running a {tone} {universe} tabletop RPG adventure.
+            instructions="""You are a helpful voice shopping assistant for an online store. The user is interacting with you via voice.
 
-UNIVERSE: {self.world['setting']}
+You help customers:
+- Browse our product catalog (mugs, t-shirts, hoodies, and more)
+- Find products that match their preferences
+- Answer questions about specific products
+- Place orders with proper confirmation
+- Review their orders
 
-YOUR ROLE AS GM:
-1. You describe scenes vividly and immersively
-2. You control NPCs (non-player characters) and the environment
-3. You react to the player's choices and drive the story forward
-4. You maintain continuity - remember what happened before
-5. You create challenges, mysteries, and opportunities for the player
+Your responses are conversational, friendly, and concise. When describing products, mention the name, price in rupees, and key features. When taking orders, always confirm the product, quantity, and size (if applicable) before creating the order.
 
-STORYTELLING RULES:
-- Use {self.world['tone_desc']} language appropriate to the {tone} tone
-- Keep descriptions extremely concise (1-2 sentences) before prompting player action
-- NO long descriptions - get to the action immediately
-- React logically to player choices - if they try something clever, it might work
-- If they try something impossible, quickly explain why and offer an alternative
-- Track important details: locations visited, NPCs met, items found
-- Build toward a quick climax by turn 6
-- Actively push story toward conclusion after turn 5
-
-CONVERSATION FLOW:
-1. Describe the current scene or situation
-2. Present choices or challenges (not always explicit - let them be creative)
-3. ALWAYS end with a question prompting action:
-   - "What do you do?"
-   - "How do you respond?"
-   - "What's your next move?"
-4. When player responds, describe the outcome and consequences
-5. Continue the story based on their action
-
-IMPORTANT CONTINUITY:
-- Reference past events: "You remember the merchant mentioned this place..."
-- Track relationships: "The guard recognizes you from earlier..."
-- Build consequences: "Your earlier choice to spare the bandit has consequences..."
-- Remember items/abilities: "You still have the rusty key from the tavern..."
-
-DETECTIVE UNIVERSE SPECIAL RULES (if applicable):
-- Use record_clue tool when player discovers evidence
-- Use add_suspect tool when player encounters persons of interest
-- Use review_case_notes when player wants to review their investigation
-- Present red herrings and misleading evidence
-- Allow player to interrogate suspects and examine crime scenes
-- Build toward revealing the culprit based on accumulated evidence
-- Use noir language: "dame", "gumshoe", "case", "lead", "stiff" (for corpse)
-
-PACING (CRITICAL - KEEP STORIES SHORT):
-- Target: Complete story in 6-8 conversational turns (approximately 5-7 minutes)
-- Turn 1: Quick intro and immediate hook
-- Turns 2-4: Rapid escalation with 1-2 challenges
-- Turns 5-6: Quick climax
-- Turn 7: Fast resolution and ending
-- Keep each response to 2-3 sentences maximum
-- Move the story forward quickly - don't linger on descriptions
-- After turn 6, start wrapping up the story
-- Use phrases like "Time is running out" or "This is it" to signal climax
-
-DO NOT:
-- Make choices for the player
-- Tell them what their character thinks or feels
-- Railroad them into one solution
-- Forget previous events or conversations
-- Use meta-gaming language (don't say "roll for", "make a check", etc.)
-
-START: Begin by asking the player their character's name, then launch into the opening scene at {self.world['starting_location']}.""",
+Remember:
+- Prices are in Indian Rupees (INR)
+- Some products have size options (S, M, L, XL)
+- Always confirm order details before finalizing
+- Be helpful and enthusiastic about our products
+- You can access the complete catalog to answer any product questions""",
         )
-    
+        # Store conversation context for product references
+        self.last_products_shown = []
+
     @function_tool
-    async def record_event(
-        self, 
-        context: RunContext, 
-        event_type: str, 
-        description: str,
-        location: str = None
+    async def browse_products(
+        self,
+        context: RunContext,
+        category: Optional[str] = None,
+        max_price: Optional[int] = None,
+        color: Optional[str] = None,
+        search_term: Optional[str] = None
     ):
-        """Record a significant story event for continuity tracking.
+        """Browse the product catalog with optional filters.
         
-        Use this tool to remember important story beats so you can reference them later.
+        Use this tool when the customer wants to see products or is looking for something specific.
         
         Args:
-            event_type: Type of event - "combat", "discovery", "npc_interaction", "location_change", "item_acquired"
-            description: Brief description of what happened
-            location: Where it happened (optional)
-            
-        Returns:
-            Confirmation that event was recorded, plus pacing guidance
+            category: Product category like 'mug', 'tshirt', or 'hoodie'
+            max_price: Maximum price in rupees (INR)
+            color: Color preference like 'black', 'white', 'blue', 'gray'
+            search_term: Search text to match in product name or description
         """
-        self.turn_count += 1
+        logger.info(f"Browsing products: category={category}, max_price={max_price}, color={color}, search={search_term}")
         
-        event = {
-            "turn": self.turn_count,
-            "type": event_type,
-            "description": description,
-            "location": location or self.current_location,
-            "timestamp": datetime.now().isoformat()
-        }
+        products = list_products(
+            category=category,
+            max_price=max_price,
+            color=color,
+            search_term=search_term
+        )
         
-        self.story_events.append(event)
+        # Store for reference
+        self.last_products_shown = products
         
-        # Update current location if it changed
-        if event_type == "location_change" and location:
-            self.current_location = location
+        if not products:
+            return "No products found matching those criteria."
         
-        logger.info(f"📖 Story event recorded (Turn {self.turn_count}): {event_type} - {description}")
+        # Format product list
+        result = f"Found {len(products)} product(s):\n"
+        for i, p in enumerate(products, 1):
+            result += f"{i}. {p['name']} - {p['price']} rupees"
+            if 'color' in p:
+                result += f" ({p['color']})"
+            if 'sizes' in p:
+                result += f" - Available in sizes: {', '.join(p['sizes'])}"
+            result += f"\n   {p['description']}\n"
         
-        # Provide pacing guidance
-        pacing_msg = f"Event recorded: {description}. "
-        
-        if self.turn_count >= 7:
-            pacing_msg += "WRAP UP NOW - End the story in the next response with a satisfying conclusion."
-        elif self.turn_count >= 5:
-            pacing_msg += "CLIMAX - Build to the final confrontation or revelation NOW."
-        elif self.turn_count >= 3:
-            pacing_msg += "ESCALATE - Present the main challenge soon."
-        
-        return pacing_msg
-    
+        return result
+
     @function_tool
-    async def update_inventory(
-        self, 
-        context: RunContext, 
-        item: str,
-        action: str = "add"
+    async def place_order(
+        self,
+        context: RunContext,
+        product_id: str,
+        quantity: int = 1,
+        size: Optional[str] = None
     ):
-        """Track items the player acquires or loses.
+        """Place an order for a product.
         
-        Use this when player finds, buys, or loses items.
-        
-        Args:
-            item: Name of the item
-            action: "add" to give item to player, "remove" to take it away
-            
-        Returns:
-            Confirmation message
-        """
-        if action == "add":
-            self.inventory.append(item)
-            logger.info(f"🎒 Added to inventory: {item}")
-            return f"Added {item} to inventory"
-        elif action == "remove":
-            if item in self.inventory:
-                self.inventory.remove(item)
-                logger.info(f"🎒 Removed from inventory: {item}")
-                return f"Removed {item} from inventory"
-            else:
-                return f"Player doesn't have {item}"
-        
-        return "Invalid action"
-    
-    @function_tool
-    async def add_companion(self, context: RunContext, npc_name: str, description: str):
-        """Track NPCs who join the player as companions.
-        
-        Use this when an NPC agrees to travel with the player.
+        Use this tool when the customer confirms they want to buy a product.
+        Always confirm the product details with the customer before calling this.
         
         Args:
-            npc_name: Name of the companion
-            description: Brief description (role, personality, etc.)
-            
-        Returns:
-            Confirmation message
+            product_id: The product ID (like 'mug-001', 'tshirt-001', 'hoodie-002')
+            quantity: Number of items to order (default: 1)
+            size: Size for clothing items (S, M, L, XL) if applicable
         """
-        companion = {
-            "name": npc_name,
-            "description": description,
-            "joined_at_turn": self.turn_count
-        }
+        logger.info(f"Creating order: product_id={product_id}, quantity={quantity}, size={size}")
         
-        self.companions.append(companion)
-        logger.info(f"👥 Companion joined: {npc_name}")
-        
-        return f"{npc_name} has joined as a companion"
-    
+        try:
+            line_items = [{
+                "product_id": product_id,
+                "quantity": quantity,
+                "size": size
+            }]
+            
+            order = create_order(line_items)
+            
+            # Format order confirmation
+            result = f"Order confirmed! Order ID: {order['id']}\n"
+            result += "Items:\n"
+            for item in order['items']:
+                result += f"- {item['product_name']} x {item['quantity']}"
+                if item.get('size'):
+                    result += f" (Size: {item['size']})"
+                result += f" - {item['item_total']} rupees\n"
+            result += f"Total: {order['total']} rupees\n"
+            result += f"Your order has been placed successfully and saved!"
+            
+            return result
+            
+        except ValueError as e:
+            return f"Sorry, I couldn't place that order: {str(e)}"
+        except Exception as e:
+            logger.error(f"Error creating order: {e}")
+            return "Sorry, there was an error placing your order. Please try again."
+
     @function_tool
-    async def record_clue(self, context: RunContext, clue: str, location: str):
-        """Record a clue discovered during investigation (Detective universe).
+    async def view_last_order(self, context: RunContext):
+        """View the most recent order.
         
-        Use this when the player finds evidence, witnesses something, or discovers information.
+        Use this tool when the customer asks what they just bought or wants to review their last order.
+        """
+        logger.info("Retrieving last order")
+        
+        order = get_last_order()
+        
+        if not order:
+            return "You haven't placed any orders yet."
+        
+        result = f"Your last order (ID: {order['id']}):\n"
+        result += "Items:\n"
+        for item in order['items']:
+            result += f"- {item['product_name']} x {item['quantity']}"
+            if item.get('size'):
+                result += f" (Size: {item['size']})"
+            result += f" - {item['item_total']} rupees\n"
+        result += f"Total: {order['total']} rupees\n"
+        result += f"Status: {order['status']}"
+        
+        return result
+
+    @function_tool
+    async def view_all_orders(self, context: RunContext):
+        """View all orders that have been placed.
+        
+        Use this tool when the customer asks to see their order history or all orders.
+        """
+        logger.info("Retrieving all orders")
+        
+        orders = get_all_orders()
+        
+        if not orders:
+            return "No orders have been placed yet."
+        
+        result = f"Order History ({len(orders)} order(s)):\n\n"
+        for order in orders:
+            result += f"Order {order['id']} - {order['created_at'][:10]}\n"
+            for item in order['items']:
+                result += f"  - {item['product_name']} x {item['quantity']}"
+                if item.get('size'):
+                    result += f" (Size: {item['size']})"
+                result += "\n"
+            result += f"  Total: {order['total']} rupees\n\n"
+        
+        return result
+
+    @function_tool
+    async def get_product_details(self, context: RunContext, product_reference: str):
+        """Get detailed information about a specific product.
+        
+        Use this when the customer asks about a specific product by name or reference
+        (like "the second hoodie" or "that black mug").
         
         Args:
-            clue: Description of the clue found
-            location: Where the clue was found
-            
-        Returns:
-            Confirmation message
+            product_reference: Product name, ID, or description reference
         """
-        clue_entry = {
-            "clue": clue,
-            "location": location,
-            "turn": self.turn_count,
-            "timestamp": datetime.now().isoformat()
-        }
+        logger.info(f"Getting product details for: {product_reference}")
         
-        self.clues.append(clue_entry)
-        logger.info(f"🔍 Clue recorded: {clue}")
+        products = load_catalog()
         
-        return f"Clue recorded: {clue}"
-    
-    @function_tool
-    async def add_suspect(
-        self, 
-        context: RunContext, 
-        name: str, 
-        description: str,
-        motive: str = "Unknown",
-        alibi: str = "Unknown"
-    ):
-        """Track suspects in the case (Detective universe).
+        # Try to find by ID first
+        product = next((p for p in products if p["id"] == product_reference), None)
         
-        Use this when the player encounters a person of interest in the investigation.
+        # If not found, try searching by name
+        if not product:
+            search_results = list_products(search_term=product_reference)
+            if search_results:
+                product = search_results[0]
         
-        Args:
-            name: Suspect's name
-            description: Physical description and background
-            motive: Their potential motive for the crime
-            alibi: Their claimed whereabouts during the crime
-            
-        Returns:
-            Confirmation message
-        """
-        suspect = {
-            "name": name,
-            "description": description,
-            "motive": motive,
-            "alibi": alibi,
-            "added_at_turn": self.turn_count
-        }
+        if not product:
+            return f"I couldn't find a product matching '{product_reference}'. Would you like me to show you our catalog?"
         
-        self.suspects.append(suspect)
-        logger.info(f"🕵️ Suspect added: {name}")
+        result = f"{product['name']}\n"
+        result += f"Price: {product['price']} rupees\n"
+        result += f"Description: {product['description']}\n"
+        if 'color' in product:
+            result += f"Color: {product['color']}\n"
+        if 'sizes' in product:
+            result += f"Available sizes: {', '.join(product['sizes'])}\n"
+        result += f"Product ID: {product['id']}\n"
+        result += f"In stock: {'Yes' if product.get('in_stock') else 'No'}"
         
-        return f"Added {name} to suspect list"
-    
-    @function_tool
-    async def review_case_notes(self, context: RunContext):
-        """Review all clues and suspects collected so far (Detective universe).
-        
-        Use this when player asks to review their notes, clues, or suspect list.
-        
-        Returns:
-            Summary of all evidence and suspects
-        """
-        if not self.clues and not self.suspects:
-            return "You haven't collected any clues or identified any suspects yet."
-        
-        notes = "CASE NOTES:\n\n"
-        
-        if self.clues:
-            notes += "CLUES DISCOVERED:\n"
-            for i, clue_entry in enumerate(self.clues, 1):
-                notes += f"{i}. {clue_entry['clue']} (Found at: {clue_entry['location']})\n"
-            notes += "\n"
-        
-        if self.suspects:
-            notes += "SUSPECTS:\n"
-            for i, suspect in enumerate(self.suspects, 1):
-                notes += f"{i}. {suspect['name']}\n"
-                notes += f"   Motive: {suspect['motive']}\n"
-                notes += f"   Alibi: {suspect['alibi']}\n"
-            notes += "\n"
-        
-        logger.info(f"📋 Case notes reviewed: {len(self.clues)} clues, {len(self.suspects)} suspects")
-        
-        return notes
-    
-    @function_tool
-    async def save_session(self, context: RunContext, session_title: str):
-        """Save the current game session to a JSON file.
-        
-        Use this when the player wants to end the session or at major story milestones.
-        
-        Args:
-            session_title: A title for this session (e.g., "The Dragon's Lair")
-            
-        Returns:
-            Confirmation with session details
-        """
-        session_id = f"SESSION_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        
-        session_data = {
-            "session_id": session_id,
-            "title": session_title,
-            "universe": self.universe,
-            "tone": self.tone,
-            "player_name": self.player_name,
-            "total_turns": self.turn_count,
-            "current_location": self.current_location,
-            "inventory": self.inventory,
-            "companions": [c['name'] for c in self.companions],
-            "clues": self.clues if self.universe == "detective" else [],
-            "suspects": [s['name'] for s in self.suspects] if self.universe == "detective" else [],
-            "story_events": self.story_events,
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Save to file
-        sessions_dir = Path("game_sessions")
-        sessions_dir.mkdir(exist_ok=True)
-        
-        session_file = sessions_dir / f"{session_id}.json"
-        
-        with open(session_file, "w") as f:
-            json.dump(session_data, f, indent=2)
-        
-        logger.info(f"💾 Session saved: {session_id} - {session_title}")
-        
-        summary = f"Session '{session_title}' saved! You played for {self.turn_count} turns"
-        if self.inventory:
-            summary += f" and collected {len(self.inventory)} items"
-        if self.companions:
-            summary += f" with {len(self.companions)} companion(s)"
-        
-        return summary
+        return result
 
 
 def prewarm(proc: JobProcess):
-    """Pre-load models to reduce latency"""
     proc.userdata["vad"] = silero.VAD.load()
 
 
 async def entrypoint(ctx: JobContext):
-    """Main entry point for the Game Master agent"""
+    # Logging setup
+    ctx.log_context_fields = {
+        "room": ctx.room.name,
+    }
+
+    # Initialize catalog and orders files if they don't exist
+    if not CATALOG_FILE.exists():
+        logger.warning("Creating sample catalog file...")
+        sample_catalog = [
+            {
+                "id": "mug-001",
+                "name": "Stoneware Coffee Mug",
+                "description": "Handcrafted ceramic mug perfect for your morning coffee",
+                "price": 800,
+                "currency": "INR",
+                "category": "mug",
+                "color": "white",
+                "in_stock": True
+            },
+            {
+                "id": "mug-002",
+                "name": "Blue Ceramic Mug",
+                "description": "Classic blue glazed ceramic mug",
+                "price": 650,
+                "currency": "INR",
+                "category": "mug",
+                "color": "blue",
+                "in_stock": True
+            },
+            {
+                "id": "tshirt-001",
+                "name": "Cotton T-Shirt",
+                "description": "Comfortable cotton t-shirt for everyday wear",
+                "price": 899,
+                "currency": "INR",
+                "category": "tshirt",
+                "color": "black",
+                "sizes": ["S", "M", "L", "XL"],
+                "in_stock": True
+            },
+            {
+                "id": "tshirt-002",
+                "name": "Premium White Tee",
+                "description": "Premium quality white cotton t-shirt",
+                "price": 1200,
+                "currency": "INR",
+                "category": "tshirt",
+                "color": "white",
+                "sizes": ["S", "M", "L", "XL"],
+                "in_stock": True
+            },
+            {
+               "id": "cap-001",
+               "name": "Baseball Cap",
+               "description": "Adjustable cotton baseball cap",
+               "price": 349,
+               "currency": "INR",
+               "category": "accessories",
+               "color": "black",
+               "sizes": ["S", "M"],
+               "in_stock": True
+            },
+            {
+                "id": "hoodie-001",
+                "name": "Black Hoodie",
+                "description": "Warm and cozy black hoodie with front pocket",
+                "price": 2499,
+                "currency": "INR",
+                "category": "hoodie",
+                "color": "black",
+                "sizes": ["M", "L", "XL"],
+                "in_stock": True
+            },
+            {
+                "id": "hoodie-002",
+                "name": "Gray Zip Hoodie",
+                "description": "Premium gray hoodie with zipper",
+                "price": 2799,
+                "currency": "INR",
+                "category": "hoodie",
+                "color": "gray",
+                "sizes": ["S", "M", "L", "XL"],
+                "in_stock": True
+            },
+        ]
+        with open(CATALOG_FILE, 'w', encoding='utf-8') as f:
+            json.dump(sample_catalog, f, indent=2, ensure_ascii=False)
+        logger.info(f"Sample catalog created at {CATALOG_FILE}")
     
-    ctx.log_context_fields = {"room": ctx.room.name}
-    
-    # You can change these to customize the game!
-    # Options: "fantasy", "sci-fi", "post-apocalypse", "horror", "detective"
-    universe = "detective"
-    # Options: "dramatic", "humorous", "spooky", "epic", "noir"
-    tone = "dramatic"
-    
-    logger.info(f"🎲 Starting {tone} {universe} adventure")
-    
-    # Create voice pipeline
+    if not ORDERS_FILE.exists():
+        logger.info(f"Initializing empty orders file at {ORDERS_FILE}")
+        with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump([], f)
+
+    # Set up voice AI pipeline
     session = AgentSession(
         stt=deepgram.STT(model="nova-3"),
         llm=google.LLM(model="gemini-2.5-flash"),
         tts=murf.TTS(
-            voice="en-US-matthew",  # Deep, narrative voice
-            style="Narration",      # Story-telling style
+            voice="en-US-matthew", 
+            style="Conversation",
             tokenizer=tokenize.basic.SentenceTokenizer(min_sentence_len=2),
             text_pacing=True
         ),
@@ -419,15 +530,32 @@ async def entrypoint(ctx: JobContext):
         vad=ctx.proc.userdata["vad"],
         preemptive_generation=True,
     )
-    
+
+    # Metrics collection
+    usage_collector = metrics.UsageCollector()
+
+    @session.on("metrics_collected")
+    def _on_metrics_collected(ev: MetricsCollectedEvent):
+        metrics.log_metrics(ev.metrics)
+        usage_collector.collect(ev.metrics)
+
+    async def log_usage():
+        summary = usage_collector.get_summary()
+        logger.info(f"Usage: {summary}")
+
+    ctx.add_shutdown_callback(log_usage)
+
+    # Start the session
     await session.start(
-        agent=GameMasterAgent(universe=universe, tone=tone),
+        agent=Assistant(),
         room=ctx.room,
+        room_input_options=RoomInputOptions(
+            noise_cancellation=noise_cancellation.BVC(),
+        ),
     )
-    
+
+    # Join the room and connect to the user
     await ctx.connect()
-    
-    logger.info("🎲 Game Master ready to begin the adventure!")
 
 
 if __name__ == "__main__":

@@ -1,203 +1,107 @@
-{
-  "groceries": [
+[
     {
-      "id": "G001",
-      "name": "Whole Wheat Bread",
-      "category": "groceries",
-      "subcategory": "bakery",
-      "price": 45,
-      "currency": "INR",
-      "brand": "Modern",
-      "size": "400g",
-      "tags": ["bread", "wheat", "vegan"]
+        "id": "mug-001",
+        "name": "Stoneware Coffee Mug",
+        "description": "Classic ceramic coffee mug, 350ml capacity",
+        "price": 450,
+        "currency": "INR",
+        "category": "mug",
+        "color": "white",
+        "in_stock": true
     },
     {
-      "id": "G002",
-      "name": "White Bread",
-      "category": "groceries",
-      "subcategory": "bakery",
-      "price": 40,
-      "currency": "INR",
-      "brand": "Britannia",
-      "size": "400g",
-      "tags": ["bread", "white"]
+        "id": "mug-002",
+        "name": "Stoneware Coffee Mug",
+        "description": "Classic ceramic coffee mug, 350ml capacity",
+        "price": 450,
+        "currency": "INR",
+        "category": "mug",
+        "color": "blue",
+        "in_stock": true
     },
     {
-      "id": "G003",
-      "name": "Peanut Butter",
-      "category": "groceries",
-      "subcategory": "spreads",
-      "price": 250,
-      "currency": "INR",
-      "brand": "Sundrop",
-      "size": "500g",
-      "tags": ["spread", "peanut", "protein"]
+        "id": "tshirt-001",
+        "name": "Cotton T-Shirt",
+        "description": "100% cotton, comfortable fit",
+        "price": 599,
+        "currency": "INR",
+        "category": "clothing",
+        "color": "black",
+        "size": "M",
+        "in_stock": true
     },
     {
-      "id": "G004",
-      "name": "Strawberry Jam",
-      "category": "groceries",
-      "subcategory": "spreads",
-      "price": 180,
-      "currency": "INR",
-      "brand": "Kissan",
-      "size": "400g",
-      "tags": ["spread", "jam", "sweet"]
+        "id": "tshirt-002",
+        "name": "Cotton T-Shirt",
+        "description": "100% cotton, comfortable fit",
+        "price": 599,
+        "currency": "INR",
+        "category": "clothing",
+        "color": "white",
+        "size": "L",
+        "in_stock": true
     },
     {
-      "id": "G005",
-      "name": "Fresh Milk",
-      "category": "groceries",
-      "subcategory": "dairy",
-      "price": 60,
-      "currency": "INR",
-      "brand": "Amul",
-      "size": "1L",
-      "tags": ["milk", "dairy", "fresh"]
+        "id": "hoodie-001",
+        "name": "Zip-Up Hoodie",
+        "description": "Warm fleece hoodie with front zipper",
+        "price": 1299,
+        "currency": "INR",
+        "category": "clothing",
+        "color": "black",
+        "size": "M",
+        "in_stock": true
     },
     {
-      "id": "G006",
-      "name": "Eggs",
-      "category": "groceries",
-      "subcategory": "protein",
-      "price": 90,
-      "currency": "INR",
-      "brand": "Farm Fresh",
-      "size": "12 pieces",
-      "tags": ["eggs", "protein"]
+        "id": "hoodie-002",
+        "name": "Zip-Up Hoodie",
+        "description": "Warm fleece hoodie with front zipper",
+        "price": 1299,
+        "currency": "INR",
+        "category": "clothing",
+        "color": "grey",
+        "size": "L",
+        "in_stock": true
     },
     {
-      "id": "G007",
-      "name": "Pasta",
-      "category": "groceries",
-      "subcategory": "pasta",
-      "price": 120,
-      "currency": "INR",
-      "brand": "Del Monte",
-      "size": "500g",
-      "tags": ["pasta", "italian", "carbs"]
+        "id": "bottle-001",
+        "name": "Stainless Steel Water Bottle",
+        "description": "Insulated water bottle, keeps drinks cold for 24hrs",
+        "price": 899,
+        "currency": "INR",
+        "category": "bottle",
+        "color": "silver",
+        "capacity": "750ml",
+        "in_stock": true
     },
     {
-      "id": "G008",
-      "name": "Pasta Sauce",
-      "category": "groceries",
-      "subcategory": "sauces",
-      "price": 150,
-      "currency": "INR",
-      "brand": "Ragu",
-      "size": "350g",
-      "tags": ["sauce", "italian", "tomato"]
+        "id": "bag-001",
+        "name": "Canvas Tote Bag",
+        "description": "Eco-friendly canvas tote, perfect for shopping",
+        "price": 399,
+        "currency": "INR",
+        "category": "bag",
+        "color": "beige",
+        "in_stock": true
     },
     {
-      "id": "G009",
-      "name": "Cheese",
-      "category": "groceries",
-      "subcategory": "dairy",
-      "price": 200,
-      "currency": "INR",
-      "brand": "Amul",
-      "size": "200g",
-      "tags": ["cheese", "dairy"]
+        "id": "notebook-001",
+        "name": "Leather Journal",
+        "description": "Premium leather-bound journal, 200 pages",
+        "price": 799,
+        "currency": "INR",
+        "category": "stationery",
+        "color": "brown",
+        "in_stock": true
     },
     {
-      "id": "G010",
-      "name": "Butter",
-      "category": "groceries",
-      "subcategory": "dairy",
-      "price": 60,
-      "currency": "INR",
-      "brand": "Amul",
-      "size": "100g",
-      "tags": ["butter", "dairy"]
+        "id": "cap-001",
+        "name": "Baseball Cap",
+        "description": "Adjustable cotton baseball cap",
+        "price": 349,
+        "currency": "INR",
+        "category": "accessories",
+        "color": "black",
+        "in_stock": true
     }
-  ],
-  "snacks": [
-    {
-      "id": "S001",
-      "name": "Potato Chips",
-      "category": "snacks",
-      "subcategory": "chips",
-      "price": 20,
-      "currency": "INR",
-      "brand": "Lays",
-      "size": "50g",
-      "tags": ["chips", "salty", "crispy"]
-    },
-    {
-      "id": "S002",
-      "name": "Chocolate Bar",
-      "category": "snacks",
-      "subcategory": "chocolate",
-      "price": 40,
-      "currency": "INR",
-      "brand": "Cadbury Dairy Milk",
-      "size": "50g",
-      "tags": ["chocolate", "sweet"]
-    },
-    {
-      "id": "S003",
-      "name": "Cookies",
-      "category": "snacks",
-      "subcategory": "biscuits",
-      "price": 30,
-      "currency": "INR",
-      "brand": "Parle-G",
-      "size": "100g",
-      "tags": ["biscuits", "sweet", "tea-time"]
-    },
-    {
-      "id": "S004",
-      "name": "Namkeen Mix",
-      "category": "snacks",
-      "subcategory": "savory",
-      "price": 35,
-      "currency": "INR",
-      "brand": "Haldiram's",
-      "size": "150g",
-      "tags": ["namkeen", "salty", "spicy"]
-    }
-  ],
-  "prepared_food": [
-    {
-      "id": "P001",
-      "name": "Veggie Pizza",
-      "category": "prepared_food",
-      "subcategory": "pizza",
-      "price": 350,
-      "currency": "INR",
-      "brand": "Store Made",
-      "size": "Medium",
-      "tags": ["pizza", "vegetarian", "ready-to-eat"]
-    },
-    {
-      "id": "P002",
-      "name": "Chicken Sandwich",
-      "category": "prepared_food",
-      "subcategory": "sandwich",
-      "price": 120,
-      "currency": "INR",
-      "brand": "Store Made",
-      "size": "Regular",
-      "tags": ["sandwich", "chicken", "ready-to-eat"]
-    },
-    {
-      "id": "P003",
-      "name": "Veg Sandwich",
-      "category": "prepared_food",
-      "subcategory": "sandwich",
-      "price": 80,
-      "currency": "INR",
-      "brand": "Store Made",
-      "size": "Regular",
-      "tags": ["sandwich", "vegetarian", "ready-to-eat"]
-    }
-  ],
-  "recipes": {
-    "peanut butter sandwich": ["G001", "G003"],
-    "pb&j sandwich": ["G001", "G003", "G004"],
-    "pasta": ["G007", "G008", "G009"],
-    "pasta for two": ["G007", "G008", "G009"],
-    "grilled cheese": ["G001", "G009", "G010"],
-    "breakfast": ["G005", "G006", "G002"]
-  }
-}
+]
