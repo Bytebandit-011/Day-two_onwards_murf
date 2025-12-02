@@ -1,0 +1,16 @@
+{
+  "player_name": "John",
+  "current_round": 1,
+  "max_rounds": 3,
+  "rounds": [
+    {
+      "round_number": 1,
+      "scenario": "You are a museum guide explaining to visitors why all the paintings have mysteriously turned into memes.",
+      "player_performance": [],
+      "host_reaction": "Alright, John, that was... a very unique take on the 'future museum' concept! Bringing in Phineas and Ferb as co-creators is definitely a bold choice, and I appreciate the creativity there. However, the core challenge was explaining *why* the paintings turned into memes, and I felt like we didn't quite get that specific explanation. It was more of a general announcement about the future of art. You skirted around the 'meme' part a little! Good effort on the imagination, but let's try to hit those specific scenario points next time, eh?"
+    }
+  ],
+  "phase": "done",
+  "timestamp": "20251202_084931",
+  "completed": false
+}

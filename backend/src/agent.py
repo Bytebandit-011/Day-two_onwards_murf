@@ -1,6 +1,6 @@
 import logging
 import json
-import os
+import random
 from datetime import datetime
 from typing import Optional
 from pathlib import Path
@@ -27,394 +27,212 @@ logger = logging.getLogger("agent")
 
 load_dotenv(".env.local")
 
-# File paths
-DB_DIR = Path("DB")
-CATALOG_FILE = DB_DIR / "catalog.json"
-ORDERS_FILE = DB_DIR / "orders.json"
-
-# Ensure DB directory exists
-DB_DIR.mkdir(exist_ok=True)
-
-
-def load_catalog() -> list[dict]:
-    """Load product catalog from DB/catalog.json"""
-    try:
-        if CATALOG_FILE.exists():
-            with open(CATALOG_FILE, 'r', encoding='utf-8') as f:
-                catalog = json.load(f)
-                logger.info(f"Loaded {len(catalog)} products from catalog")
-                return catalog
-        else:
-            logger.warning(f"Catalog file not found at {CATALOG_FILE}")
-            return []
-    except Exception as e:
-        logger.error(f"Error loading catalog: {e}")
-        return []
+# Improv scenarios
+IMPROV_SCENARIOS = [
+    "You are a barista who has to tell a customer that their latte is actually a portal to another dimension.",
+    "You are a time-travelling tour guide explaining modern smartphones to someone from the 1800s.",
+    "You are a restaurant waiter who must calmly tell a customer that their order has escaped the kitchen.",
+    "You are a customer trying to return an obviously cursed object to a very skeptical shop owner.",
+    "You are a therapist conducting a session with a superhero who's afraid of heights.",
+    "You are a museum guide explaining to visitors why all the paintings have mysteriously turned into memes.",
+    "You are a driving instructor teaching someone who thinks they're in a video game.",
+    "You are a job interviewer for a position as a professional napper.",
+    "You are a tech support agent helping someone whose toaster has gained sentience.",
+    "You are a real estate agent showing a house that's clearly haunted, but you're in denial about it.",
+    "You are a flight attendant announcing that the plane has accidentally time-traveled to the dinosaur era.",
+    "You are a librarian scolding someone for being too quiet.",
+    "You are a chef on a cooking show where every ingredient is invisible.",
+    "You are a bank teller processing a withdrawal for a pirate who insists on paying in doubloons.",
+    "You are a personal trainer coaching a zombie who wants to get in shape.",
+]
 
 
-def load_orders() -> list[dict]:
-    """Load orders from DB/orders.json"""
-    try:
-        if ORDERS_FILE.exists():
-            with open(ORDERS_FILE, 'r', encoding='utf-8') as f:
-                orders = json.load(f)
-                logger.info(f"Loaded {len(orders)} orders")
-                return orders
-        else:
-            logger.info("No existing orders file, starting fresh")
-            return []
-    except Exception as e:
-        logger.error(f"Error loading orders: {e}")
-        return []
-
-
-def save_orders(orders: list[dict]) -> bool:
-    """Save orders to DB/orders.json"""
-    try:
-        with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(orders, f, indent=2, ensure_ascii=False)
-        logger.info(f"Saved {len(orders)} orders to file")
-        return True
-    except Exception as e:
-        logger.error(f"Error saving orders: {e}")
-        return False
-
-
-def list_products(
-    category: Optional[str] = None,
-    max_price: Optional[int] = None,
-    color: Optional[str] = None,
-    search_term: Optional[str] = None
-) -> list[dict]:
-    """
-    Filter and return products from the catalog.
+class ImprovGameState:
+    """Manages the state of the improv game"""
     
-    Args:
-        category: Filter by product category (e.g., 'mug', 'tshirt', 'hoodie')
-        max_price: Maximum price in INR
-        color: Filter by color
-        search_term: Search in product name or description
+    def __init__(self):
+        self.player_name: Optional[str] = None
+        self.current_round: int = 0
+        self.max_rounds: int = 3
+        self.rounds: list[dict] = []
+        self.phase: str = "intro"  # "intro" | "awaiting_improv" | "reacting" | "done"
+        self.used_scenarios: list[str] = []
+        self.current_scenario: Optional[str] = None
+        self.turn_count_in_scene: int = 0
+        self.scene_ended: bool = False
     
-    Returns:
-        List of matching products
-    """
-    products = load_catalog()
-    results = products.copy()
-    
-    if category:
-        results = [p for p in results if p.get("category", "").lower() == category.lower()]
-    
-    if max_price:
-        results = [p for p in results if p["price"] <= max_price]
-    
-    if color:
-        results = [p for p in results if p.get("color", "").lower() == color.lower()]
-    
-    if search_term:
-        search_lower = search_term.lower()
-        results = [
-            p for p in results 
-            if search_lower in p["name"].lower() or search_lower in p.get("description", "").lower()
-        ]
-    
-    return results
-
-
-def create_order(line_items: list[dict]) -> dict:
-    """
-    Create a new order from line items.
-    
-    Args:
-        line_items: List of dicts with keys: product_id, quantity, and optionally size
+    def get_next_scenario(self) -> str:
+        """Get a random scenario that hasn't been used yet"""
+        available = [s for s in IMPROV_SCENARIOS if s not in self.used_scenarios]
+        if not available:
+            # If all used, reset
+            self.used_scenarios = []
+            available = IMPROV_SCENARIOS
         
-    Returns:
-        Order object with id, items, total, currency, and timestamp
-    """
-    products = load_catalog()
-    orders = load_orders()
+        scenario = random.choice(available)
+        self.used_scenarios.append(scenario)
+        self.current_scenario = scenario
+        return scenario
     
-    order_items = []
-    total = 0
-    
-    for item in line_items:
-        product_id = item.get("product_id")
-        quantity = item.get("quantity", 1)
-        size = item.get("size")
-        
-        # Find the product
-        product = next((p for p in products if p["id"] == product_id), None)
-        
-        if not product:
-            raise ValueError(f"Product {product_id} not found")
-        
-        if not product.get("in_stock", False):
-            raise ValueError(f"Product {product['name']} is out of stock")
-        
-        # Validate size if applicable
-        if size and "sizes" in product:
-            if size.upper() not in product["sizes"]:
-                raise ValueError(f"Size {size} not available for {product['name']}")
-        
-        item_total = product["price"] * quantity
-        total += item_total
-        
-        order_items.append({
-            "product_id": product_id,
-            "product_name": product["name"],
-            "quantity": quantity,
-            "size": size,
-            "unit_price": product["price"],
-            "item_total": item_total
+    def start_new_round(self):
+        """Initialize a new round"""
+        self.current_round += 1
+        self.phase = "awaiting_improv"
+        self.turn_count_in_scene = 0
+        self.scene_ended = False
+        scenario = self.get_next_scenario()
+        self.rounds.append({
+            "round_number": self.current_round,
+            "scenario": scenario,
+            "player_performance": [],
+            "host_reaction": None
         })
+        return scenario
     
-    # Generate order
-    order = {
-        "id": f"ORD-{len(orders) + 1:04d}",
-        "items": order_items,
-        "total": total,
-        "currency": "INR",
-        "created_at": datetime.now().isoformat(),
-        "status": "confirmed"
-    }
+    def add_player_line(self, text: str):
+        """Record a player's improv line"""
+        if self.rounds:
+            self.rounds[-1]["player_performance"].append(text)
+            self.turn_count_in_scene += 1
     
-    # Add to orders list and save
-    orders.append(order)
-    save_orders(orders)
+    def end_current_round(self, host_reaction: str):
+        """End the current round with host's reaction"""
+        if self.rounds:
+            self.rounds[-1]["host_reaction"] = host_reaction
+        self.phase = "reacting"
     
-    # Log order for debugging
-    logger.info(f"Order created: {json.dumps(order, indent=2)}")
+    def is_game_complete(self) -> bool:
+        """Check if all rounds are done"""
+        return self.current_round >= self.max_rounds
     
-    return order
-
-
-def get_last_order() -> Optional[dict]:
-    """
-    Retrieve the most recent order.
-    
-    Returns:
-        The last order object or None if no orders exist
-    """
-    orders = load_orders()
-    if orders:
-        return orders[-1]
-    return None
-
-
-def get_all_orders() -> list[dict]:
-    """
-    Retrieve all orders.
-    
-    Returns:
-        List of all order objects
-    """
-    return load_orders()
+    def should_end_scene(self) -> bool:
+        """Determine if the current scene should end"""
+        # End after 3-5 player turns or if explicitly ended
+        return self.scene_ended or self.turn_count_in_scene >= random.randint(3, 5)
 
 
 class Assistant(Agent):
-    def __init__(self) -> None:
+    def __init__(self, game_state: ImprovGameState) -> None:
         super().__init__(
-            instructions="""You are a helpful voice shopping assistant for an online store. The user is interacting with you via voice.
+            instructions="""You are the charismatic host of a TV improv show called "Improv Battle"!
 
-You help customers:
-- Browse our product catalog (mugs, t-shirts, hoodies, and more)
-- Find products that match their preferences
-- Answer questions about specific products
-- Place orders with proper confirmation
-- Review their orders
+Your personality:
+- High-energy, witty, and enthusiastic about improv
+- Clear and direct when explaining rules and scenarios
+- Your reactions are VARIED and REALISTIC - not always supportive
+- Sometimes you're amused, sometimes unimpressed, sometimes pleasantly surprised
+- You give honest critiques but stay constructive and respectful
+- You can lightly tease but never be cruel or abusive
+- You celebrate creativity and bold choices
 
-Your responses are conversational, friendly, and concise. When describing products, mention the name, price in rupees, and key features. When taking orders, always confirm the product, quantity, and size (if applicable) before creating the order.
+Your role in the game:
+1. Introduce the show warmly and explain how it works
+2. Present each improv scenario clearly to the player
+3. Let the player perform their improv
+4. React authentically to their performance with specific observations
+5. Move the game forward between rounds
+6. Provide a final summary at the end
 
-Remember:
-- Prices are in Indian Rupees (INR)
-- Some products have size options (S, M, L, XL)
-- Always confirm order details before finalizing
-- Be helpful and enthusiastic about our products
-- You can access the complete catalog to answer any product questions""",
+When reacting to performances:
+- Mix your tones: sometimes supportive ("That was hilarious!"), sometimes constructive ("You could have pushed that further"), sometimes mildly critical ("That felt a bit safe")
+- Be SPECIFIC about what you noticed: reference actual choices they made
+- Vary your energy: don't use the same reaction pattern every time
+- Stay encouraging overall, but don't fake enthusiasm
+- Comment on their character work, timing, commitment, creativity, or absurdity
+
+Keep your responses conversational and concise - this is a voice interaction. Avoid overly long explanations.""",
         )
-        # Store conversation context for product references
-        self.last_products_shown = []
-
+        self.game_state = game_state
+        self.last_reaction_tone = None  # Track to vary reactions
+    
     @function_tool
-    async def browse_products(
-        self,
-        context: RunContext,
-        category: Optional[str] = None,
-        max_price: Optional[int] = None,
-        color: Optional[str] = None,
-        search_term: Optional[str] = None
-    ):
-        """Browse the product catalog with optional filters.
-        
-        Use this tool when the customer wants to see products or is looking for something specific.
+    async def set_player_name(self, context: RunContext, name: str):
+        """Set the player's name at the start of the game.
         
         Args:
-            category: Product category like 'mug', 'tshirt', or 'hoodie'
-            max_price: Maximum price in rupees (INR)
-            color: Color preference like 'black', 'white', 'blue', 'gray'
-            search_term: Search text to match in product name or description
+            name: The player's name
         """
-        logger.info(f"Browsing products: category={category}, max_price={max_price}, color={color}, search={search_term}")
-        
-        products = list_products(
-            category=category,
-            max_price=max_price,
-            color=color,
-            search_term=search_term
-        )
-        
-        # Store for reference
-        self.last_products_shown = products
-        
-        if not products:
-            return "No products found matching those criteria."
-        
-        # Format product list
-        result = f"Found {len(products)} product(s):\n"
-        for i, p in enumerate(products, 1):
-            result += f"{i}. {p['name']} - {p['price']} rupees"
-            if 'color' in p:
-                result += f" ({p['color']})"
-            if 'sizes' in p:
-                result += f" - Available in sizes: {', '.join(p['sizes'])}"
-            result += f"\n   {p['description']}\n"
-        
-        return result
-
+        logger.info(f"Setting player name: {name}")
+        self.game_state.player_name = name
+        return f"Great! Welcome to Improv Battle, {name}! Let me explain how this works."
+    
     @function_tool
-    async def place_order(
-        self,
-        context: RunContext,
-        product_id: str,
-        quantity: int = 1,
-        size: Optional[str] = None
-    ):
-        """Place an order for a product.
+    async def start_next_round(self, context: RunContext):
+        """Start the next improv round with a new scenario.
         
-        Use this tool when the customer confirms they want to buy a product.
-        Always confirm the product details with the customer before calling this.
+        Use this when you're ready to present the next improv challenge to the player.
+        """
+        logger.info(f"Starting round {self.game_state.current_round + 1}")
+        
+        if self.game_state.is_game_complete():
+            self.game_state.phase = "done"
+            return "All rounds complete! Time for the final summary."
+        
+        scenario = self.game_state.start_new_round()
+        
+        return f"Round {self.game_state.current_round} of {self.game_state.max_rounds}. Here's your scenario: {scenario}. Begin your improv whenever you're ready!"
+    
+    @function_tool
+    async def end_current_scene(self, context: RunContext, reaction: str):
+        """End the current improv scene and provide your host reaction.
+        
+        Use this after the player has performed their improv and you want to give feedback.
+        The reaction should be specific, varied in tone, and authentic.
         
         Args:
-            product_id: The product ID (like 'mug-001', 'tshirt-001', 'hoodie-002')
-            quantity: Number of items to order (default: 1)
-            size: Size for clothing items (S, M, L, XL) if applicable
+            reaction: Your detailed reaction to the player's performance
         """
-        logger.info(f"Creating order: product_id={product_id}, quantity={quantity}, size={size}")
+        logger.info(f"Ending scene with reaction")
         
-        try:
-            line_items = [{
-                "product_id": product_id,
-                "quantity": quantity,
-                "size": size
-            }]
-            
-            order = create_order(line_items)
-            
-            # Format order confirmation
-            result = f"Order confirmed! Order ID: {order['id']}\n"
-            result += "Items:\n"
-            for item in order['items']:
-                result += f"- {item['product_name']} x {item['quantity']}"
-                if item.get('size'):
-                    result += f" (Size: {item['size']})"
-                result += f" - {item['item_total']} rupees\n"
-            result += f"Total: {order['total']} rupees\n"
-            result += f"Your order has been placed successfully and saved!"
-            
-            return result
-            
-        except ValueError as e:
-            return f"Sorry, I couldn't place that order: {str(e)}"
-        except Exception as e:
-            logger.error(f"Error creating order: {e}")
-            return "Sorry, there was an error placing your order. Please try again."
-
+        self.game_state.end_current_round(reaction)
+        
+        # Track reaction tone to encourage variety
+        if "hilarious" in reaction.lower() or "loved" in reaction.lower():
+            self.last_reaction_tone = "positive"
+        elif "flat" in reaction.lower() or "could have" in reaction.lower():
+            self.last_reaction_tone = "critical"
+        else:
+            self.last_reaction_tone = "neutral"
+        
+        return f"Reaction recorded. Moving forward in the game."
+    
     @function_tool
-    async def view_last_order(self, context: RunContext):
-        """View the most recent order.
+    async def get_game_status(self, context: RunContext):
+        """Get the current status of the game.
         
-        Use this tool when the customer asks what they just bought or wants to review their last order.
+        Use this to check where we are in the game flow.
         """
-        logger.info("Retrieving last order")
+        status = {
+            "player_name": self.game_state.player_name,
+            "current_round": self.game_state.current_round,
+            "max_rounds": self.game_state.max_rounds,
+            "phase": self.game_state.phase,
+            "current_scenario": self.game_state.current_scenario,
+            "is_complete": self.game_state.is_game_complete()
+        }
         
-        order = get_last_order()
-        
-        if not order:
-            return "You haven't placed any orders yet."
-        
-        result = f"Your last order (ID: {order['id']}):\n"
-        result += "Items:\n"
-        for item in order['items']:
-            result += f"- {item['product_name']} x {item['quantity']}"
-            if item.get('size'):
-                result += f" (Size: {item['size']})"
-            result += f" - {item['item_total']} rupees\n"
-        result += f"Total: {order['total']} rupees\n"
-        result += f"Status: {order['status']}"
-        
-        return result
-
+        logger.info(f"Game status: {status}")
+        return json.dumps(status, indent=2)
+    
     @function_tool
-    async def view_all_orders(self, context: RunContext):
-        """View all orders that have been placed.
+    async def end_game_early(self, context: RunContext):
+        """End the game early if the player wants to stop.
         
-        Use this tool when the customer asks to see their order history or all orders.
+        Use this if the player clearly indicates they want to quit or stop playing.
         """
-        logger.info("Retrieving all orders")
-        
-        orders = get_all_orders()
-        
-        if not orders:
-            return "No orders have been placed yet."
-        
-        result = f"Order History ({len(orders)} order(s)):\n\n"
-        for order in orders:
-            result += f"Order {order['id']} - {order['created_at'][:10]}\n"
-            for item in order['items']:
-                result += f"  - {item['product_name']} x {item['quantity']}"
-                if item.get('size'):
-                    result += f" (Size: {item['size']})"
-                result += "\n"
-            result += f"  Total: {order['total']} rupees\n\n"
-        
-        return result
-
+        logger.info("Game ended early by player request")
+        self.game_state.phase = "done"
+        return "Game ended. Prepare a brief farewell for the player."
+    
     @function_tool
-    async def get_product_details(self, context: RunContext, product_reference: str):
-        """Get detailed information about a specific product.
+    async def mark_scene_complete(self, context: RunContext):
+        """Mark that the player has indicated their scene is complete.
         
-        Use this when the customer asks about a specific product by name or reference
-        (like "the second hoodie" or "that black mug").
-        
-        Args:
-            product_reference: Product name, ID, or description reference
+        Use this when the player says something like 'end scene', 'that's it', or clearly signals they're done.
         """
-        logger.info(f"Getting product details for: {product_reference}")
-        
-        products = load_catalog()
-        
-        # Try to find by ID first
-        product = next((p for p in products if p["id"] == product_reference), None)
-        
-        # If not found, try searching by name
-        if not product:
-            search_results = list_products(search_term=product_reference)
-            if search_results:
-                product = search_results[0]
-        
-        if not product:
-            return f"I couldn't find a product matching '{product_reference}'. Would you like me to show you our catalog?"
-        
-        result = f"{product['name']}\n"
-        result += f"Price: {product['price']} rupees\n"
-        result += f"Description: {product['description']}\n"
-        if 'color' in product:
-            result += f"Color: {product['color']}\n"
-        if 'sizes' in product:
-            result += f"Available sizes: {', '.join(product['sizes'])}\n"
-        result += f"Product ID: {product['id']}\n"
-        result += f"In stock: {'Yes' if product.get('in_stock') else 'No'}"
-        
-        return result
+        logger.info("Player marked scene as complete")
+        self.game_state.scene_ended = True
+        return "Scene marked as complete. Provide your reaction now."
 
 
 def prewarm(proc: JobProcess):
@@ -426,95 +244,10 @@ async def entrypoint(ctx: JobContext):
     ctx.log_context_fields = {
         "room": ctx.room.name,
     }
-
-    # Initialize catalog and orders files if they don't exist
-    if not CATALOG_FILE.exists():
-        logger.warning("Creating sample catalog file...")
-        sample_catalog = [
-            {
-                "id": "mug-001",
-                "name": "Stoneware Coffee Mug",
-                "description": "Handcrafted ceramic mug perfect for your morning coffee",
-                "price": 800,
-                "currency": "INR",
-                "category": "mug",
-                "color": "white",
-                "in_stock": True
-            },
-            {
-                "id": "mug-002",
-                "name": "Blue Ceramic Mug",
-                "description": "Classic blue glazed ceramic mug",
-                "price": 650,
-                "currency": "INR",
-                "category": "mug",
-                "color": "blue",
-                "in_stock": True
-            },
-            {
-                "id": "tshirt-001",
-                "name": "Cotton T-Shirt",
-                "description": "Comfortable cotton t-shirt for everyday wear",
-                "price": 899,
-                "currency": "INR",
-                "category": "tshirt",
-                "color": "black",
-                "sizes": ["S", "M", "L", "XL"],
-                "in_stock": True
-            },
-            {
-                "id": "tshirt-002",
-                "name": "Premium White Tee",
-                "description": "Premium quality white cotton t-shirt",
-                "price": 1200,
-                "currency": "INR",
-                "category": "tshirt",
-                "color": "white",
-                "sizes": ["S", "M", "L", "XL"],
-                "in_stock": True
-            },
-            {
-               "id": "cap-001",
-               "name": "Baseball Cap",
-               "description": "Adjustable cotton baseball cap",
-               "price": 349,
-               "currency": "INR",
-               "category": "accessories",
-               "color": "black",
-               "sizes": ["S", "M"],
-               "in_stock": True
-            },
-            {
-                "id": "hoodie-001",
-                "name": "Black Hoodie",
-                "description": "Warm and cozy black hoodie with front pocket",
-                "price": 2499,
-                "currency": "INR",
-                "category": "hoodie",
-                "color": "black",
-                "sizes": ["M", "L", "XL"],
-                "in_stock": True
-            },
-            {
-                "id": "hoodie-002",
-                "name": "Gray Zip Hoodie",
-                "description": "Premium gray hoodie with zipper",
-                "price": 2799,
-                "currency": "INR",
-                "category": "hoodie",
-                "color": "gray",
-                "sizes": ["S", "M", "L", "XL"],
-                "in_stock": True
-            },
-        ]
-        with open(CATALOG_FILE, 'w', encoding='utf-8') as f:
-            json.dump(sample_catalog, f, indent=2, ensure_ascii=False)
-        logger.info(f"Sample catalog created at {CATALOG_FILE}")
     
-    if not ORDERS_FILE.exists():
-        logger.info(f"Initializing empty orders file at {ORDERS_FILE}")
-        with open(ORDERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump([], f)
+    # Initialize game state for this session
+    game_state = ImprovGameState()
+    logger.info("New Improv Battle game session started")
 
     # Set up voice AI pipeline
     session = AgentSession(
@@ -531,6 +264,19 @@ async def entrypoint(ctx: JobContext):
         preemptive_generation=True,
     )
 
+    # Track player turns for auto-scene-ending
+    @session.on("user_speech_committed")
+    def on_user_speech(msg):
+        """Track player's improv lines"""
+        if game_state.phase == "awaiting_improv":
+            text = msg.text if hasattr(msg, 'text') else str(msg)
+            game_state.add_player_line(text)
+            logger.info(f"Player turn {game_state.turn_count_in_scene}: {text[:50]}...")
+            
+            # Check if scene should auto-end
+            if game_state.should_end_scene():
+                logger.info(f"Scene auto-ending after {game_state.turn_count_in_scene} turns")
+
     # Metrics collection
     usage_collector = metrics.UsageCollector()
 
@@ -542,12 +288,37 @@ async def entrypoint(ctx: JobContext):
     async def log_usage():
         summary = usage_collector.get_summary()
         logger.info(f"Usage: {summary}")
+        logger.info(f"Game completed: {game_state.is_game_complete()}, Rounds played: {game_state.current_round}")
+    
+    async def save_session():
+        """Save the game session to JSON file"""
+        sessions_dir = Path(__file__).parent.parent / "game_sessions"
+        sessions_dir.mkdir(exist_ok=True)
+        
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = sessions_dir / f"SESSION_{timestamp}.json"
+        
+        session_data = {
+            "player_name": game_state.player_name,
+            "current_round": game_state.current_round,
+            "max_rounds": game_state.max_rounds,
+            "rounds": game_state.rounds,
+            "phase": game_state.phase,
+            "timestamp": timestamp,
+            "completed": game_state.is_game_complete()
+        }
+        
+        with open(filename, 'w') as f:
+            json.dump(session_data, f, indent=2)
+        
+        logger.info(f"Session saved to {filename}")
 
     ctx.add_shutdown_callback(log_usage)
+    ctx.add_shutdown_callback(save_session)
 
     # Start the session
     await session.start(
-        agent=Assistant(),
+        agent=Assistant(game_state),
         room=ctx.room,
         room_input_options=RoomInputOptions(
             noise_cancellation=noise_cancellation.BVC(),
@@ -556,6 +327,9 @@ async def entrypoint(ctx: JobContext):
 
     # Join the room and connect to the user
     await ctx.connect()
+    
+    logger.info("Agent connected and ready for Improv Battle!")
+
 
 
 if __name__ == "__main__":

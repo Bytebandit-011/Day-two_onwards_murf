@@ -1,10 +1,11 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { motion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
+import { type LocalParticipant, ParticipantEvent } from 'livekit-client';
+import { useLocalParticipant } from '@livekit/components-react';
 import type { AppConfig } from '@/app-config';
 import { ChatTranscript } from '@/components/app/chat-transcript';
-import { PreConnectMessage } from '@/components/app/preconnect-message';
 import { TileLayout } from '@/components/app/tile-layout';
 import {
   AgentControlBar,
@@ -13,65 +14,82 @@ import {
 import { useChatMessages } from '@/hooks/useChatMessages';
 import { useConnectionTimeout } from '@/hooks/useConnectionTimout';
 import { useDebugMode } from '@/hooks/useDebug';
-import { cn } from '@/lib/utils';
-import { ScrollArea } from '../livekit/scroll-area/scroll-area';
-
-const MotionBottom = motion.create('div');
 
 const IN_DEVELOPMENT = process.env.NODE_ENV !== 'production';
-const BOTTOM_VIEW_MOTION_PROPS = {
-  variants: {
-    visible: {
-      opacity: 1,
-      translateY: '0%',
-    },
-    hidden: {
-      opacity: 0,
-      translateY: '100%',
-    },
-  },
-  initial: 'hidden',
-  animate: 'visible',
-  exit: 'hidden',
-  transition: {
-    duration: 0.3,
-    delay: 0.5,
-    ease: 'easeOut',
-  },
-};
 
-interface FadeProps {
-  top?: boolean;
-  bottom?: boolean;
-  className?: string;
-}
+// === PLAYER BADGE — NOW A FLOATING ORB ===
+function PlayerBadge({ participant }: { participant?: LocalParticipant }) {
+  const [name, setName] = useState('You');
 
-export function Fade({ top = false, bottom = false, className }: FadeProps) {
+  useEffect(() => {
+    if (!participant) return;
+    const update = () => {
+      let n = participant.name || '';
+      if ((!n || n === 'user' || n === 'identity') && participant.metadata) {
+        try {
+          const meta = JSON.parse(participant.metadata);
+          n = meta.name || meta.displayName || n;
+        } catch {}
+      }
+      setName(n.trim() || 'You');
+    };
+    update();
+    participant.on(ParticipantEvent.ParticipantNameChanged, update);
+    participant.on(ParticipantEvent.ParticipantMetadataChanged, update);
+    return () => {
+      participant.off(ParticipantEvent.ParticipantNameChanged, update);
+      participant.off(ParticipantEvent.ParticipantMetadataChanged, update);
+    };
+  }, [participant]);
+
   return (
-    <div
-      className={cn(
-        'from-background pointer-events-none h-4 bg-linear-to-b to-transparent',
-        top && 'bg-linear-to-b',
-        bottom && 'bg-linear-to-t',
-        className
-      )}
-    />
+    <motion.div
+      initial={{ scale: 0, opacity: 0 }}
+      animate={{ scale: 1, opacity: 1 }}
+      transition={{ type: 'spring', stiffness: 300, damping: 25, delay: 0.6 }}
+      className="absolute top-10 left-1/2 z-50 -translate-x-1/2"
+    >
+      <div className="relative">
+        {/* Outer glow ring */}
+        <div className="absolute inset-0 scale-150 animate-pulse rounded-full bg-purple-400/30 blur-3xl" />
+
+        {/* Badge */}
+        <div className="relative flex items-center gap-5 rounded-full border border-purple-400/50 bg-black/70 px-8 py-5 shadow-2xl ring-2 ring-purple-400/40 backdrop-blur-2xl">
+          <div className="relative">
+            <div className="h-16 w-16 rounded-full bg-gradient-to-br from-purple-400 via-pink-400 to-rose-500 p-0.5">
+              <div className="flex h-full w-full items-center justify-center rounded-full bg-black">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                  className="h-9 w-9 text-purple-400"
+                >
+                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                </svg>
+              </div>
+            </div>
+            <div className="absolute -inset-1 animate-pulse rounded-full bg-gradient-to-r from-purple-400 to-pink-400 opacity-70 blur-xl" />
+          </div>
+
+          <div className="text-left">
+            <p className="text-xs font-black tracking-widest text-purple-300 uppercase">
+              Contestant
+            </p>
+            <p className="text-2xl font-black tracking-tight text-white">{name}</p>
+          </div>
+        </div>
+      </div>
+    </motion.div>
   );
 }
-interface SessionViewProps {
-  appConfig: AppConfig;
-}
 
-export const SessionView = ({
-  appConfig,
-  ...props
-}: React.ComponentProps<'section'> & SessionViewProps) => {
+export const SessionView = ({ appConfig }: { appConfig: AppConfig }) => {
   useConnectionTimeout(200_000);
   useDebugMode({ enabled: IN_DEVELOPMENT });
 
+  const { localParticipant } = useLocalParticipant();
   const messages = useChatMessages();
   const [chatOpen, setChatOpen] = useState(false);
-  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   const controls: ControlBarControls = {
     leave: true,
@@ -81,50 +99,78 @@ export const SessionView = ({
     screenShare: appConfig.supportsVideoInput,
   };
 
-  useEffect(() => {
-    const lastMessage = messages.at(-1);
-    const lastMessageIsLocal = lastMessage?.from?.isLocal === true;
-
-    if (scrollAreaRef.current && lastMessageIsLocal) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
-    }
-  }, [messages]);
-
   return (
-    <section className="bg-background relative z-10 h-full w-full overflow-hidden" {...props}>
-      {/* Chat Transcript */}
-      <div
-        className={cn(
-          'fixed inset-0 grid grid-cols-1 grid-rows-1',
-          !chatOpen && 'pointer-events-none'
-        )}
-      >
-        <Fade top className="absolute inset-x-4 top-0 h-40" />
-        <ScrollArea ref={scrollAreaRef} className="px-4 pt-40 pb-[150px] md:px-6 md:pb-[180px]">
-          <ChatTranscript
-            hidden={!chatOpen}
-            messages={messages}
-            className="mx-auto max-w-2xl space-y-3 transition-opacity duration-300 ease-out"
-          />
-        </ScrollArea>
+    <section className="relative min-h-screen w-full overflow-hidden bg-black">
+      {/* Epic background */}
+      <div className="absolute inset-0 bg-gradient-to-br from-purple-950/40 via-black via-60% to-rose-950/40" />
+      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-black/30" />
+
+      {/* Subtle floating particles */}
+      <div className="pointer-events-none absolute inset-0 overflow-hidden">
+        <div className="absolute top-20 left-20 h-96 w-96 animate-pulse rounded-full bg-purple-500/10 blur-3xl" />
+        <div className="absolute right-32 bottom-32 h-80 w-80 animate-pulse rounded-full bg-pink-500/10 blur-3xl delay-700" />
+        <div className="absolute top-1/3 right-1/4 h-64 w-64 animate-pulse rounded-full bg-purple-600/10 blur-3xl delay-1000" />
       </div>
 
-      {/* Tile Layout */}
-      <TileLayout chatOpen={chatOpen} />
+      {/* Player Badge — God tier */}
+      <PlayerBadge participant={localParticipant} />
 
-      {/* Bottom */}
-      <MotionBottom
-        {...BOTTOM_VIEW_MOTION_PROPS}
-        className="fixed inset-x-3 bottom-0 z-50 md:inset-x-12"
+      {/* Main Stage — Perfect center */}
+      <motion.div
+        initial={{ scale: 0.9, opacity: 0 }}
+        animate={{ scale: 1, opacity: 1 }}
+        transition={{ duration: 1.2, type: 'spring', stiffness: 80 }}
+        className="absolute inset-0 flex items-center justify-center"
       >
-        {appConfig.isPreConnectBufferEnabled && (
-          <PreConnectMessage messages={messages} className="pb-4" />
-        )}
-        <div className="bg-background relative mx-auto max-w-2xl pb-3 md:pb-12">
-          <Fade bottom className="absolute inset-x-0 top-0 h-4 -translate-y-full" />
-          <AgentControlBar controls={controls} onChatOpenChange={setChatOpen} />
+        <div className="relative">
+          {/* Glow behind agent */}
+          <div className="absolute inset-0 scale-150 animate-pulse bg-purple-400/20 blur-3xl" />
+          <TileLayout chatOpen={chatOpen} />
         </div>
-      </MotionBottom>
+      </motion.div>
+
+      {/* Chat Panel — Slides in from right */}
+      <AnimatePresence>
+        {chatOpen && (
+          <motion.div
+            initial={{ x: 400, opacity: 0 }}
+            animate={{ x: 0, opacity: 1 }}
+            exit={{ x: 400, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+            className="fixed top-32 right-6 bottom-32 w-96 overflow-y-auto rounded-3xl border border-purple-500/40 bg-black/60 p-8 shadow-2xl ring-2 ring-purple-400/30 backdrop-blur-2xl"
+          >
+            <h3 className="mb-6 text-xl font-black text-purple-400">Live Chat</h3>
+            <ChatTranscript messages={messages} className="space-y-4" />
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Control Bar — Floating center bottom */}
+      <motion.div
+        initial={{ y: 150, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        transition={{ delay: 0.8, type: 'spring', stiffness: 120 }}
+        className="absolute bottom-12 left-1/2 z-50 -translate-x-1/2"
+      >
+        <div className="relative">
+          {/* Glow under bar */}
+          <div className="absolute inset-x-0 -bottom-10 h-32 bg-gradient-to-t from-emerald-500/20 to-transparent blur-3xl" />
+
+          <div className="rounded-full border border-emerald-400/50 bg-black/70 px-10 py-7 shadow-2xl ring-2 ring-emerald-400/40 backdrop-blur-2xl">
+            <AgentControlBar controls={controls} onChatOpenChange={setChatOpen} />
+          </div>
+        </div>
+      </motion.div>
+
+      {/* Listening text — subtle & classy */}
+      <motion.p
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 0.7, y: 0 }}
+        transition={{ delay: 1.5 }}
+        className="absolute bottom-32 left-1/2 -translate-x-1/2 font-medium tracking-wider text-emerald-300/80"
+      >
+        Host is listening — show your talent
+      </motion.p>
     </section>
   );
 };
